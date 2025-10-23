@@ -1,7 +1,17 @@
 export function getUserIDs() {
   return ["1", "2", "3", "4"];
 }
-
+export function getQuestions() {
+  return ["Most listened song (count)", 
+    "Most listened song (time)", 
+    "Most listened artist (count)", 
+    "Most listened artist (time)",
+    "Friday night song (count)",
+    "Friday night song (time)",
+    "Longest streak song",
+    "Every day songs",
+    "Top three genres"];
+}
 export function getSong(songID) {
   const songs = [
     {

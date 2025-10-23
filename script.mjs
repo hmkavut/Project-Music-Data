@@ -4,240 +4,258 @@
 // Note that when running locally, in order to open a web page which uses modules, you must serve the directory over HTTP e.g. with https://www.npmjs.com/package/http-server
 // You can't open the index.html file using a file:// URL.
 
-import { countUsers, getSong2, getListenEvents2, getUserIDs2  } from "./common.mjs";
-//const joined = [];
+import {
+  countUsers,
+  getSong2,
+  getListenEvents2,
+  getUserIDs2,
+  getQuestions2,
+} from "./common.mjs";
 
-function initialSetup(){
-   const container = document.createElement("div");
-// --- Build page structure ---
-const h1 = document.createElement("h1");
-h1.textContent = "Spaced Repetition Tracker";
-// Accessible user selector
-const userSelectLabel = document.createElement("label");
-userSelectLabel.textContent = "Select User: ";
-userSelectLabel.setAttribute("for", "userSelect");
+function initialSetup() {
+  createUserSelection();
+}
 
-const userSelect = document.createElement("select");
-userSelect.id = "userSelect";
-userSelect.innerHTML = `
+function createUserSelection() {
+  const container = document.getElementById("drop-down");
+  const h1 = document.createElement("h1");
+  h1.textContent = "Music Data Project";
+
+  const userSelectLabel = document.createElement("label");
+  userSelectLabel.textContent = "Select User: ";
+  userSelectLabel.setAttribute("for", "userSelect");
+
+  const userSelect = document.createElement("select");
+  userSelect.id = "userSelect";
+  userSelect.innerHTML = `
   <option value="">-- Choose a user --</option>
   ${getUserIDs2()
     .map((id) => `<option value="${id}">User ${id}</option>`)
     .join("")}
-`;
-  // Append everything to the container
+    `;
   container.appendChild(h1);
   container.appendChild(userSelectLabel);
   container.appendChild(userSelect);
 
-  // Add container to the body
-  document.body.appendChild(container);
-
-  // Add a listener to handle selection
   userSelect.addEventListener("change", (e) => {
+    e.preventDefault();
     const selectedId = e.target.value;
+    
     if (selectedId) {
-      console.log(joinEventAndSongs(Number(selectedId)));
+      createTable(selectedId);
     }
   });
+}
+
+function createTable(userID) {
+  const container = document.getElementById("results");
+  container.innerHTML = ""; // clear previous content
+
+  const table = document.createElement("table");
+  table.style.borderCollapse = "collapse";
+  table.style.width = "100%";
+
+  const userAnswers = answers(userID); // ✅ fixed naming
+  const questions = getQuestions2();
+  let a = 0;
+
+  questions.forEach((q) => {
+    
+    const row = document.createElement("tr");
+
+    const questionCell = document.createElement("td");
+    questionCell.textContent = q;
+
+    const answerCell = document.createElement("td");
+    const firstKey = Object.keys(userAnswers)[a];
+    const firstValue = userAnswers[firstKey];
+    a++;
+    answerCell.textContent =
+      typeof firstValue === "object"
+        ? JSON.stringify(firstValue)
+        : firstValue ?? "No data";
+
+    row.appendChild(questionCell);
+    row.appendChild(answerCell);
+    table.appendChild(row);
+  });
+
+  container.appendChild(table);
+}
+
+function joinSongs(userID, bool) {
+  const userData = getListenEvents2(userID);
+  const events = Object.values(userData).flat();
+  const joined = events.map((e) => {
+    const song = getSong2(e.song_id);
+    return {
+      ...e,
+      ...song,
+    };
+  });
+  joined.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+  const filtered = joined.filter((a) => {
+    const date = new Date(a.timestamp);
+    const day = date.toLocaleString("en-GB", { weekday: "long" }); // e.g. "Friday"
+    const hour = date.getHours();
+
+    return (day === "Friday" && hour >= 17) || (day === "Saturday" && hour < 4);
+  });
+
+  return bool ? joined : filtered;
+}
+
+function mostListenedTo(userID, joined2, param) {
+  // You don't actually need to call joinEventAndSongs again if joined2 is already joined data.
+  const result = {};
+  const count = {};
+
+  joined2.forEach((row) => {
+    const key = row[param]; // dynamic property
+    if (!result[key]) {
+      result[key] = 0;
+      count[key] = 0;
+    }
+    result[key] += row.seconds_since_midnight;
+    count[key]++;
+  });
+
+  // Convert object to array format like SQL result
+  const summary = Object.entries(result).map(([key, totalSeconds]) => ({
+    [param]: key, // dynamically set property name
+    totalSeconds,
+    count: count[key],
+  }));
+
+  return summary;
+}
+
+function mostConsecutiveSong(listens) {
+  if (listens.length === 0) return null;
+
+  let maxSong = listens[0].title;
+  let maxCount = 1;
+
+  let currentSong = listens[0].title;
+  let currentCount = 1;
+
+  for (let i = 1; i < listens.length; i++) {
+    if (listens[i].title === currentSong) {
+      currentCount++;
+    } else {
+      if (currentCount > maxCount) {
+        maxCount = currentCount;
+        maxSong = currentSong;
+      }
+      currentSong = listens[i].title;
+      currentCount = 1;
+    }
   }
 
+  // Check the last streak
+  if (currentCount > maxCount) {
+    maxCount = currentCount;
+    maxSong = currentSong;
+  }
 
-function joinEventAndSongs(userID){
-  const userData= getListenEvents2(userID);
-  const events = Object.values(userData).flat();
-  const joined = events.map(e => {
-  const song = getSong2(e.song_id);
+  return { song: maxSong, timesInARow: maxCount };
+}
+function getMostListened(songs, prop) {
+  console.log(songs);
+  console.log(prop);
+  
+  const maxItem = songs?.reduce((max, s) => (s[prop] > max[prop] ? s : max));
+  if (!maxItem) return null;
+
+  const firstKey = Object.keys(maxItem)[0];
+  return maxItem[firstKey];
+}
+
+function firstItemDate(listens) {
+  if (!Array.isArray(listens) || listens.length === 0) return null;
+  return new Date(listens[0].timestamp);
+}
+
+function lastItemDate(listens) {
+  if (!Array.isArray(listens) || listens.length === 0) return null;
+  return new Date(listens[listens.length - 1].timestamp);
+}
+
+function answers(userID) {
+  const answers = {};
+  const song = mostListenedTo(userID, joinSongs(userID, true), "title");
+  const artist = mostListenedTo(userID, joinSongs(userID, true), "artist");
+  const genre = mostListenedTo(userID, joinSongs(userID, true), "genre");
+
+  const song2 = mostListenedTo(userID, joinSongs(userID, false), "title");
+  const artist2 = mostListenedTo(userID, joinSongs(userID, false), "artist");
+  const genre2 = mostListenedTo(userID, joinSongs(userID, false), "genre");
+
+  answers.mostListenSongCount = getMostListened(song, "count");
+  answers.mostListenSongCountTime = getMostListened(song, "duration_seconds");
+  answers.mostListenSongArtistCount = getMostListened(artist, "count");
+  answers.mostListenSongArtistTime = getMostListened(
+    artist,
+    "duration_seconds"
+  );
+  answers.fridayNightSongCount = getMostListened(song2, "count");
+  answers.FridayNightSongTime = getMostListened(song2, "duration_seconds");
+  answers.longestStreakSong = mostConsecutiveSong(joinSongs(userID, true));
+  answers.everyDaySongs = songsEveryDay(joinSongs(userID, true));
+  
+  answers.topThreeGenres = genre
+  .slice(0, 3)              // take first 3 items
+  .map((g) => g.genre)      // extract the 'genre' value
+  .join(", ");              // join into single string
+ 
+  
+
+  return answers;
+}
+
+function makeJustDateAndSong(listens) {
+  return listens.map((item) => {
+    const date = new Date(item.timestamp);
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, "0");
+    const day = String(date.getDate()).padStart(2, "0");
+
     return {
-      ...e,       
-      ...song, 
+      day: `${year}-${month}-${day}`,
+      id: item.id,
     };
   });
-  joined.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
-  return joined;
 }
 
-function joinFridaysSongs(userID){
-  const userData= getListenEvents2(userID);
-  const events = Object.values(userData).flat();
-  const joined = events.map(e => {
-  const song = getSong2(e.song_id);
-    return {
-      ...e,       
-      ...song, 
-    };
-  });
-  joined.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
-  const filtered = joined.filter(a => {
-  const date = new Date(a.timestamp);
-  const day = date.toLocaleString("en-GB", { weekday: "long" }); // e.g. "Friday"
-  const hour = date.getHours();
+function songsEveryDay(listens) {
+  const list = makeJustDateAndSong(listens);
+  if (!Array.isArray(list) || list.length === 0) return [];
 
-  return (day === "Friday" && hour >= 17) || (day === "Saturday" && hour < 4);
-});
+  // 1️⃣ Get all unique days
+  const days = [...new Set(list.map((x) => x.day))];
 
-  return filtered;
-}
-
-function mostOftenListenedToSong(userID, joined2){
-
-  const joined = joinEventAndSongs(userID);
-  const result = {};
-  // Group by artist and sum seconds_since_midnight
-  joined2.forEach((row) => {
-    const title = row.title;
-    if (!result[title]) {
-      result[title] = 0;
-    }
-    result[title] += row.seconds_since_midnight;
+  // 2️⃣ Group song IDs by day
+  const dayMap = {}; // { day1: Set(ids), day2: Set(ids), ... }
+  days.forEach((day) => {
+    dayMap[day] = new Set(list.filter((x) => x.day === day).map((x) => x.id));
   });
 
-  // Convert object to array format like SQL result
-  const summary = Object.entries(result).map(([title, totalSeconds]) => ({
-    title,
-    totalSeconds,
-  }));
+  // 3️⃣ Get intersection of all sets
+  let commonSongs = [...dayMap[days[0]]]; // start with first day's songs
+  for (let i = 1; i < days.length; i++) {
+    commonSongs = commonSongs.filter((id) => dayMap[days[i]].has(id));
+  }
 
-  return summary;
-
-}
-
-function mostOftenListenedToArtist(userID, joined2){
-
-  const joined = joinEventAndSongs(userID);
-  const result = {};
-  // Group by artist and sum seconds_since_midnight
-  joined2.forEach((row) => {
-    const artist = row.artist;
-    if (!result[artist]) {
-      result[artist] = 0;
-    }
-    result[artist] += row.seconds_since_midnight;
-  });
-
-  // Convert object to array format like SQL result
-  const summary = Object.entries(result).map(([artist, totalSeconds]) => ({
-    artist,
-    totalSeconds,
-  }));
-
-  return summary;
-
-}
-
-function mostOftenListenedToGenre(userID, joined2){
-
-  const joined = joinEventAndSongs(userID);
-  const result = {};
-  // Group by artist and sum seconds_since_midnight
-  joined2.forEach((row) => {
-    const genre = row.genre;
-    if (!result[genre]) {
-      result[genre] = 0;
-    }
-    result[genre] += row.seconds_since_midnight;
-  });
-
-  // Convert object to array format like SQL result
-  const summary = Object.entries(result).map(([genre, totalSeconds]) => ({
-    genre,
-    totalSeconds,
-  }));
-
-  return summary;
-
+  return commonSongs;
 }
 
 
-function mostCountedListenedToSong(userID, joined2){
 
-  const joined = joinEventAndSongs(userID);
-  const result = {};
-  // Group by artist and sum seconds_since_midnight
-  joined2.forEach((row) => {
-    const title = row.title;
-    if (!result[title]) {
-      result[title] = 0;
-    }
-    result[title] ++;
-  });
-
-  // Convert object to array format like SQL result
-  const summary = Object.entries(result).map(([title, totalSeconds]) => ({
-    title,
-    totalSeconds,
-  }));
-
-  return summary;
-
-}
-
-function mostCountedListenedToArtist(userID, joined2){
-
-  const joined = joinEventAndSongs(userID);
-  const result = {};
-  // Group by artist and sum seconds_since_midnight
-  joined2.forEach((row) => {
-    const artist = row.artist;
-    if (!result[artist]) {
-      result[artist] = 0;
-    }
-    result[artist] ++;
-  });
-
-  // Convert object to array format like SQL result
-  const summary = Object.entries(result).map(([artist, totalSeconds]) => ({
-    artist,
-    totalSeconds,
-  }));
-
-  return summary;
-
-}
-
-function mostCountedListenedToGenre(userID, joined2){
-
-  const joined = joinEventAndSongs(userID);
-  const result = {};
-  // Group by artist and sum seconds_since_midnight
-  joined2.forEach((row) => {
-    const genre = row.genre;
-    if (!result[genre]) {
-      result[genre] = 0;
-    }
-    result[genre] ++;
-  });
-
-  // Convert object to array format like SQL result
-  const summary = Object.entries(result).map(([genre, totalSeconds]) => ({
-    genre,
-    totalSeconds,
-  }));
-
-  return summary;
-
-}
 
 window.onload = function () {
   initialSetup();
-  document.querySelector("body").innerText = `There are ${countUsers()} users`;
-  const allList = joinEventAndSongs(1);
-  const allFriday = joinFridaysSongs(1);
-  console.log(joinEventAndSongs(1));
-  console.log(joinFridaysSongs(1));
-  console.log(mostOftenListenedToSong(1, allList));
-  console.log(mostOftenListenedToArtist(1, allList));
-  console.log(mostOftenListenedToGenre(1, allList));
-  
-  console.log(mostOftenListenedToSong(1, allFriday));
-  console.log(mostOftenListenedToArtist(1, allFriday));
-  console.log(mostOftenListenedToGenre(1, allFriday));
-
-  console.log(mostCountedListenedToSong(1, allList));
-  console.log(mostCountedListenedToArtist(1, allList));
-  console.log(mostCountedListenedToGenre(1, allList));
-
-  console.log(mostCountedListenedToSong(1, allFriday));
-  console.log(mostCountedListenedToArtist(1, allFriday));
-  console.log(mostCountedListenedToGenre(1, allFriday));
+  console.log(getUserIDs2().length);
+  console.log(getSong2("song-1").length);
+  console.log(getListenEvents2(3).length);
+  console.log(getQuestions2().length);
 };
